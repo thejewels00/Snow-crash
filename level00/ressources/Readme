@@ -1,0 +1,32 @@
+## What I found
+
+First I found in the intra video that I need to find where there is a password to log in to **flag00**.
+By scanning files I found an executable file owned by **flag00** using:
+
+```
+find / -user flag00 2>/dev/null
+```
+
+I found the same code in two files which is:
+
+```
+cdiiddwpgswtgt
+```
+
+By using a Caesar cipher (on dcode.fr) I found this code:
+
+```
+nottoohardhere
+```
+
+---
+
+## Access steps / commands I used
+
+```
+level00@SnowCrash:~$ su flag00
+Password: 
+Don't forget to launch getflag !
+flag00@SnowCrash:~$ getflag
+Check flag. Here is your token : x24ti5gi3x0ol2eh4esiuxias
+```
