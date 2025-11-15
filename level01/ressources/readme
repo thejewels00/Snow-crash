@@ -1,0 +1,105 @@
+# SnowCrash Level01 - Exploitation Writeup
+
+## Overview
+Level01 exploits a weak password hash found in the `/etc/passwd` file to gain access to the flag01 user account.
+
+## Discovery Process
+
+### 1. Initial Investigation
+Started by searching for references to "flag01" across the filesystem:
+```bash
+find / -type f -exec grep -i -l 'flag01' {} + 2>/dev/null
+```
+
+Results:
+```
+/etc/group
+/etc/passwd
+```
+
+### 2. Examining /etc/passwd
+```bash
+cat /etc/passwd
+```
+
+**Critical finding:** The flag01 user entry contains a password hash in the second field:
+```
+flag01:42hDRfypTqqnw:3001:3001::/home/flag/flag01:/bin/bash
+```
+
+This is unusual because modern systems store password hashes in `/etc/shadow`, not `/etc/passwd`. This indicates an old-style password configuration.
+
+### 3. Understanding the Hash
+The hash `42hDRfypTqqnw` is a **DES crypt** hash, which is:
+- An outdated encryption method
+- Vulnerable to brute-force attacks
+- Limited to 8-character passwords
+- Easily crackable with modern tools
+
+## Exploitation Steps
+
+### 1. Extract the Hash
+On your local machine, create a file with the hash:
+```bash
+echo 42hDRfypTqqnw > passwd
+```
+
+### 2. Crack the Hash with John the Ripper
+```bash
+john passwd
+```
+
+Output:
+```
+Created directory: /home/jawaher/.john
+Loaded 1 password hash (descrypt, traditional crypt(3) [DES 128/128 SSE2])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+abcdefg          (?)
+1g 0:00:00:00 100% 2/3 2.631g/s 43115p/s 43115c/s 43115C/s 123456..betabeta
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed
+```
+
+**Cracked password:** `abcdefg`
+
+### 3. Switch to flag01 User
+Back on the SnowCrash machine:
+```bash
+su flag01
+Password: abcdefg
+```
+
+### 4. Retrieve the Flag
+```bash
+getflag
+```
+
+## Result
+```
+Check flag.Here is your token : f2av5il02puano7naaf6adaaf
+```
+
+## Flag
+**f2av5il02puano7naaf6adaaf**
+
+## Vulnerability Explanation
+This level demonstrates multiple security issues:
+
+1. **Password Hash Exposure**: The password hash is stored in `/etc/passwd`, a world-readable file
+2. **Weak Encryption**: DES crypt is an obsolete hashing algorithm with known weaknesses
+3. **Weak Password**: The password "abcdefg" is trivial and appears in common wordlists
+4. **No Shadow File Protection**: Modern systems use `/etc/shadow` (readable only by root) to protect password hashes
+
+## Security Lessons
+
+1. **Never store password hashes in world-readable files** - Use `/etc/shadow` with proper permissions
+2. **Use modern hashing algorithms** - Replace DES with bcrypt, scrypt, or Argon2
+3. **Enforce strong password policies** - Require complex passwords that resist dictionary attacks
+4. **Regular security audits** - Check for misconfigurations like exposed password hashes
+5. **Password complexity requirements** - Enforce minimum length, special characters, and avoid common patterns
+
+## Tools Used
+- **john** (John the Ripper) - Password cracking tool
+- **grep** - Searching for references to flag01
+- **find** - Filesystem search utility
